@@ -9,18 +9,28 @@ from transformers.optimization import Adafactor
 
 def compute_forecast_metrics(y_true: torch.Tensor, y_pred: torch.Tensor, erp_epsilon: float = 0.1):
     """
-    y_true, y_pred: shape [n_products, horizon]
+    y_true, y_pred: shape [N, H]
     Returns scalar tensors: wape, mae, ts, erp
     """
+
+    y_true = y_true.float()
+    y_pred = y_pred.float()
+
     abs_err = torch.abs(y_true - y_pred)
 
-    wape = 100.0 * abs_err.sum() / y_true.sum().clamp(min=1e-12)
+    # Global MAE and WAPE
     mae = abs_err.mean()
+    wape = 100.0 * abs_err.sum() / y_true.sum().clamp(min=1e-12)
 
-    # Tracking Signal
-    ts = (y_true - y_pred).sum() / mae.clamp(min=1e-12)
+    # Per-series MAE: shape [N]
+    mae_per_series = abs_err.mean(dim=1).clamp(min=1e-12)
 
-    # ERP-style mismatch count over time
+    # Per-series TS, then average
+    signed_error_per_series = (y_true - y_pred).sum(dim=1)
+    ts_per_series = signed_error_per_series / mae_per_series
+    ts = ts_per_series.mean()
+
+    # Per-series ERP, then average
     erp_per_series = (abs_err >= erp_epsilon).float().sum(dim=1)
     erp = erp_per_series.mean()
 
