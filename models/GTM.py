@@ -303,6 +303,7 @@ class GTM(pl.LightningModule):
         self.autoregressive = autoregressive
         self.gpu_num = gpu_num
         self.save_hyperparameters()
+        self.validation_outputs = []
 
          # Encoder
         self.dummy_encoder = DummyEmbedder(embedding_dim)
@@ -383,14 +384,25 @@ class GTM(pl.LightningModule):
         return loss
 
     def validation_step(self, test_batch, batch_idx):
-        item_sales, category, color, fabric, temporal_features, gtrends, images = test_batch 
+        item_sales, category, color, fabric, temporal_features, gtrends, images = test_batch
         forecasted_sales, _ = self.forward(category, color, fabric, temporal_features, gtrends, images)
-        
-        return item_sales.squeeze(), forecasted_sales.squeeze()
 
-    def validation_epoch_end(self, val_step_outputs):
-        item_sales = torch.stack([x[0] for x in val_step_outputs])
-        forecasted_sales = torch.stack([x[1] for x in val_step_outputs])
+        self.validation_outputs.append(
+            {
+                "item_sales": item_sales.squeeze(),
+                "forecasted_sales": forecasted_sales.squeeze()
+            }
+        )
+
+    def on_validation_epoch_start(self):
+        self.validation_outputs = []
+
+    def on_validation_epoch_end(self):
+        if len(self.validation_outputs) == 0:
+            return
+
+        item_sales = torch.stack([x["item_sales"] for x in self.validation_outputs])
+        forecasted_sales = torch.stack([x["forecasted_sales"] for x in self.validation_outputs])
 
         # Original normalized loss
         loss = F.mse_loss(item_sales, forecasted_sales.squeeze())
@@ -414,19 +426,19 @@ class GTM(pl.LightningModule):
         )
 
         # Log loss
-        self.log('val_loss', loss)
+        self.log("val_loss", loss)
 
         # Log normalized metrics
-        self.log('val_wape_norm', val_wape_norm, prog_bar=False)
-        self.log('val_mae_norm', val_mae_norm, prog_bar=False)
-        self.log('val_ts_norm', val_ts_norm, prog_bar=False)
-        self.log('val_erp_norm', val_erp_norm, prog_bar=False)
+        self.log("val_wape_norm", val_wape_norm, prog_bar=False)
+        self.log("val_mae_norm", val_mae_norm, prog_bar=False)
+        self.log("val_ts_norm", val_ts_norm, prog_bar=False)
+        self.log("val_erp_norm", val_erp_norm, prog_bar=False)
 
         # Log rescaled metrics
-        self.log('val_wape', val_wape, prog_bar=False)
-        self.log('val_mae', val_mae, prog_bar=True)
-        self.log('val_ts', val_ts, prog_bar=False)
-        self.log('val_erp', val_erp, prog_bar=False)
+        self.log("val_wape", val_wape, prog_bar=False)
+        self.log("val_mae", val_mae, prog_bar=True)
+        self.log("val_ts", val_ts, prog_bar=False)
+        self.log("val_erp", val_erp, prog_bar=False)
 
         print(
             f"Validation normalized | "
@@ -442,3 +454,5 @@ class GTM(pl.LightningModule):
             f"TS: {val_ts.item():.3f} | "
             f"ERP: {val_erp.item():.3f}"
         )
+
+        self.validation_outputs.clear()
