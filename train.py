@@ -100,7 +100,7 @@ def run(args):
     )
 
     early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor='val_mae',
+        monitor='val_wape',
         min_delta=0.0,
         patience=5,
         verbose=True,
